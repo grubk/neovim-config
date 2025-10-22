@@ -3,7 +3,6 @@
 -- =========================
 -- Set leader key first
 vim.g.mapleader = " "
-
 vim.opt.number = true
 vim.opt.relativenumber = true
 vim.opt.smartindent = true
@@ -16,6 +15,12 @@ vim.opt.showmatch = true
 vim.opt.mouse = "a"
 vim.opt.ignorecase = true
 vim.opt.smartcase = true
+
+-- Some keymaps
+vim.keymap.set("n", "<C-d>", "<C-d>zz") -- Center screen after half-page down
+vim.keymap.set("n", "<C-u>", "<C-u>zz") -- Center screen after half-page up
+vim.keymap.set("n", "<C-f>", "<C-f>zz") -- Center screen after full-page down
+vim.keymap.set("n", "<C-b>", "<C-b>zz") -- Center screen after full-page up
 
 -- =========================
 -- Lazy.nvim bootstrap
@@ -129,6 +134,37 @@ require("lazy").setup({
       require("nvim-tree").setup()
       vim.keymap.set("n", "<leader>e", ":NvimTreeToggle<CR>", { noremap = true, silent = true })
     end
+  },
+
+    -- Fuzzy finder (Telescope)
+  {
+    "nvim-telescope/telescope.nvim",
+    dependencies = { "nvim-lua/plenary.nvim" },
+    config = function()
+      local ok, telescope = pcall(require, "telescope")
+      if not ok then
+        return
+      end
+
+      telescope.setup({
+        defaults = {
+          prompt_prefix = " ",
+          selection_caret = " ",
+          mappings = {
+            i = {
+              ["<C-j>"] = "move_selection_next",
+              ["<C-k>"] = "move_selection_previous",
+            },
+          },
+        },
+      })
+
+      local builtin = require("telescope.builtin")
+      vim.keymap.set("n", "<leader>f", builtin.find_files, { desc = "Telescope find files" })
+      vim.keymap.set("n", "<leader>g", builtin.live_grep, { desc = "Telescope live grep" })
+      vim.keymap.set("n", "<leader>fb", builtin.buffers, { desc = "Telescope buffers" })
+      vim.keymap.set("n", "<leader>fh", builtin.help_tags, { desc = "Telescope help tags" })
+    end,
   },
 
   -- Typst support with live preview
@@ -258,3 +294,49 @@ cmp.setup({
     { name = "buffer" },
   }),
 })
+
+
+-- Paste Windows clipboard image (Win+Shift+S) into ./images and insert markdown link
+local function paste_clipboard_image()
+  -- Determine directory of current buffer; use cwd if no file
+  local cur_file = vim.fn.expand('%:p')
+  local cur_dir = ''
+  if cur_file == '' then
+    cur_dir = vim.fn.getcwd()
+  else
+    cur_dir = vim.fn.expand('%:p:h')
+  end
+
+  if cur_dir == '' or cur_dir == nil then
+    print('Could not determine directory to save image')
+    return
+  end
+
+  local img_dir = cur_dir .. '\\images'
+  -- create images dir if not exists
+  vim.fn.mkdir(img_dir, 'p')
+
+  local name = os.date('%Y%m%d%H%M%S') .. '.png'
+  local full = img_dir .. '\\' .. name
+
+  -- PowerShell: get image from clipboard and save as PNG
+  -- Use -NoProfile to avoid loading user profile
+  local ps_cmd = string.format([[powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img -ne $null) { if (-not (Test-Path -Path '%s')) { New-Item -ItemType Directory -Path '%s' | Out-Null }; $file = Join-Path '%s' '%s'; $img.Save($file,[System.Drawing.Imaging.ImageFormat]::Png); Write-Output $file } else { Write-Error 'No image in clipboard'; exit 1 }"]], img_dir, img_dir, img_dir, name)
+
+  -- Run the command and capture output
+  local output = vim.fn.systemlist(ps_cmd)
+  if vim.v.shell_error == 0 and #output > 0 then
+    local rel = 'images/' .. name
+  -- Insert image link in Typst style: #image("images/2025...") on its own line below cursor
+  vim.api.nvim_put({"#image(\"" .. rel .. "\")"}, 'l', true, true)
+    print('Saved image to: ' .. output[1])
+  else
+    print('No image found in clipboard or failed to save')
+    if #output > 0 then
+      print(table.concat(output, '\n'))
+    end
+  end
+end
+
+vim.keymap.set('n', '<leader>p', paste_clipboard_image, { noremap = true, silent = true, desc = 'Paste clipboard image into ./images' })
+
